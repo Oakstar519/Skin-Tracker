@@ -1,0 +1,1 @@
+This file should be edited to supply a channel ID that the bot sends messages to. (I'm new to making Discord bots-- is it obvious?) To get a channel ID, right-click the channel and select "Copy ID," then paste it here!
