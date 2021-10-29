@@ -1,89 +1,263 @@
-import io
-import aiohttp
 import discord
-from discord.ext import tasks, commands
-import requests
-import base64
+from discord.ext import commands, tasks
+from functions import *
+
+activity = discord.Game("Minecraft")
+bot = commands.Bot(command_prefix="!", status=discord.Status.idle, activity=activity)
+bot.remove_command("help")
+
+
+# TODO: fix group entries so the database doesn't need to be opened and closed a million times, rewrite more database
+#  stuff
+
 
 with open("key.txt", "r") as f:
     BOT_KEY = f.read().strip()
     f.close()
 
 with open("channel.txt", "r") as f:
-    c = int(f.read().strip())
+    channel = int(f.read().strip())
     f.close()
 
-uuids = ['7163fbce-39ac-4a02-b836-a991c45d2dd1',
-         '88e2afec-6f2e-4a34-a96a-de61730bd3ca',
-         '05e88dce-714d-4218-be77-fade8b5dfa3c',
-         '93b459be-ce4f-4700-b457-c1aa91b3b687',
-         '87d91548-6f18-491f-a267-7833caa5d7d8',
-         '5f8eb73b-25be-4c5a-a50f-d27d65e30ca0',
-         'b0015b93-8a5d-461d-9991-3cfa23e3296f',
-         'f6fe2200-609d-4fe6-88b6-529d59ee5b71',
-         '7ed3587b-e656-4689-90d6-08e11daaf907',
-         '3f28c559-0898-4be1-9f20-9fd37ca9cd22',
-         '53bae456-dbbb-4c2f-8c79-9e8ec26c8382',
-         'ed260cac-54e4-4ee5-b4de-d289f197fa45',
-         'ac224782-efff-4296-b08c-dbde8e47abdb',
-         '2dd0cc3b-0825-4c3e-bd99-3bf07ef27447',
-         'cae9554c-31be-47e2-ba2b-4b8867adacc5',
-         'cfaefb14-46d5-473b-9e8e-67ecbf119df7',
-         '62fec5a3-1896-4beb-94e0-36e34898c787',
-         'cbf33660-3994-42c3-8d2f-6a1a84d56dea',
-         '2f723150-24de-44ff-aeee-87c75f7c7a9e',
-         '8fc22d29-4bac-4abe-84d4-7920ed4afe47',
-         '826cdcff-ccb0-42c5-9104-fcd4bb4e7f73',
-         '21ef397c-3a76-4eb7-aa17-a99d3fc658e2',
-         'f9c3c385-f403-403c-b5b7-867e012e9660',
-         'a3075fa7-ec13-49a2-aa47-6529e8b7daf2']
-usernames = ['BDoubleO100', 'cubfan135', 'Docm77', 'Etho', 'falsesymmetry', 'Grian', 'hypnotizd', 'impulseSV',
-             'iskall85', 'iJevin', 'joehillssays', 'Keralis1', 'Mumbo', 'renthedog', 'GoodTimeWithScar',
-             'Stressmonster101', 'Tango', 'Tinfoilchef', 'VintageBeef', 'Welsknight', 'xBCrafted', 'Xisuma',
-             'Zedaph', 'ZombieCleo']
-pronouns = ['his', 'his', 'his', 'his', 'her', 'his', 'his', 'his', 'his', 'his', 'his', 'his', 'his', 'his', 'his',
-            'her', 'his', 'his', 'his', 'his', 'his', 'his', 'his', 'her']
+uuid = []
+username = []
+pronoun = []
 cache = []
+groups = []
+iteration = 100
 
-activity = discord.Game("Minecraft")
-bot = commands.Bot(command_prefix="!", status=discord.Status.idle, activity=activity)
+help_msg = "All available commands:\nNote that `user` can refer to username *or* UUID.\n\n" \
+           "**!add `<user>` `[pronoun]`:** Adds the account `user` to the list. For users who use multiple pronouns, " \
+           "they can be separated by `/` or `,`.\n" \
+           "**!addgroup `[group]`:** Either adds all accounts from `group` to the list, or lists available groups.\n" \
+           "**!remove `<user>`:** Removes the account `user` from the list.\n" \
+           "**!remove-all:** Removes all users from the list.\n" \
+           "**!list `[type]`:** Lists all accounts on the list. `type` can be `all`, `uuid`, or `username`.\n" \
+           "**!get `<user>`:** Fetches the skin from the account `user`."
 
 
 @bot.event
 async def on_ready():
-    channel = bot.get_channel(c)
+    global channel
+    channel = bot.get_channel(channel)
     print(f"We have logged in as {bot.user}")
-    await channel.send("Hermit Skin Bot is online!")
-    constant.start()
+    await initialize_data()
 
 
-@tasks.loop(seconds=60.0)
-async def constant():
-    first = True
-    if first:
-        for i in range(len(uuids)):
-            response = requests.get(f"https://sessionserver.mojang.com/session/minecraft/profile/{uuids[i]}")
-            for j in response.json()['properties']:
-                final = base64.b64decode(j['value'].encode("ascii").decode('utf-8'))
-                final = str(final.split()[18]).split("\"")[1]
-                cache.append(final)
+async def initialize_data():
+    global uuid, username, pronoun, groups
+    uuid = (await get_all_data())[0]
+    username = (await get_all_data())[1]
+    pronoun = (await get_all_data())[2]
+    groups = (await get_all_data())[3]
 
-    channel = bot.get_channel(c)
-    for i in range(len(uuids)):
-        response = requests.get(f"https://sessionserver.mojang.com/session/minecraft/profile/{uuids[i]}")
-        for j in response.json()['properties']:
-            final = base64.b64decode(j['value'].encode("ascii").decode('utf-8'))
-            final = str(final.split()[18]).split("\"")[1]
+    groups.sort()
 
-            if final != cache[i]:
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(f"https://visage.surgeplay.com/full/512/{uuids[i]}") as response:
-                        if response.status != 200:
-                            return await channel.send('g')
-                        data = io.BytesIO(await response.read())
-                        await channel.send(f"{usernames[i]} has changed {pronouns[i]} skin!")
-                        await channel.send(file=discord.File(data, 'test.png'))
+    for i in range(len(uuid)):
+        cache.append(await refresh_skin_cache(uuid[i]))
 
-                cache[i] = final
+    check_skin_updates.start()
+
+
+@bot.command(name="online")
+async def check_online(ctx):
+    await ctx.send("Online!")
+
+
+@bot.command(name="help")
+async def send_help_command(ctx):
+    await ctx.send(help_msg)
+
+
+@bot.command(name="secret_admin_command_1")
+async def admin_command_1(ctx):
+    async with ctx.typing():
+        if ctx.message.author.id == 514235805057941525:
+            await add_smps_to_database()
+        else:
+            await ctx.send("no <3")
+
+
+@bot.command(name="add")
+async def add_user(ctx, user_arg=None, pronoun_arg="their", called_by_user=True, uuid_arg=None):
+    async with ctx.typing():
+        result = ["failed"]
+        if user_arg is None:  # no username or UUID passed in
+            if called_by_user:
+                await ctx.send("The command takes at least one argument: `user`")
+
+        elif uuid_arg is None:  # almost always means username was passed in but not UUID
+            result = await get_user_data(user_arg)
+
+            if result != ["failed"]:
+                uuid_arg = result[0]
+                user_arg = result[1]
+
+        elif uuid_arg is not None:
+            result = []
+
+        if result == ["failed"]:
+            if called_by_user:
+                await ctx.send("The username or UUID is invalid, or that player does not exist.")
+
+        elif uuid_arg not in uuid:
+
+            pronoun_list = await process_pronoun_list(pronoun_arg)
+
+            uuid.append(uuid_arg)
+            username.append(user_arg)
+            pronoun.append(list(pronoun_list))
+
+            pronoun_to_database = str(pronoun_list).replace("[", "")
+            pronoun_to_database = pronoun_to_database.replace("]", "")
+            pronoun_to_database = pronoun_to_database.replace("'", "")
+
+            await add_single_to_database(uuid_arg, user_arg, pronoun_to_database)
+            cache.append(await refresh_skin_cache(uuid_arg))
+
+            if called_by_user:
+                await ctx.send(f"Added {username[-1]}")
+
+        else:
+            if called_by_user:
+                await ctx.send("That user is already in the list.")
+
+
+@bot.command(name="add-group", aliases=["addgroup", "group"])
+async def add_group(ctx, group=None):
+    async with ctx.typing():
+        group_list = groups
+        if group is None or group not in group_list:
+            group_list = str(group_list).replace("'", "`")
+            group_list = group_list.strip("[]")
+
+            await ctx.send(f"Groups available:\n{group_list}")
+
+        else:
+            user_list = await add_group_from_database(group)
+
+            for i in range(len(user_list)):
+                uuid.append(user_list[i][0])
+                username.append(user_list[i][1])
+                pronoun.append(list(await process_pronoun_list(user_list[i][2])))
+
+            await add_multiple_to_database(user_list)
+
+            await ctx.send(f"Added {len(user_list)} players.")
+
+
+@bot.command(name="get")
+async def get_single_skin(ctx, arg1=None):
+    async with ctx.typing():
+        if arg1 is None:
+            await ctx.send("The command takes one argument: `user`")
+
+        else:
+            result = await get_user_data(arg1)
+
+            if result == ["failed"]:
+                await ctx.send("The username/UUID is invalid, or that player does not exist.")
+
+            else:
+                await ctx.send(file=discord.File((await render_skin(result[0])), f"{result[1]}.png"))
+
+
+@bot.command(name="list")
+async def list_users(ctx, data="all"):
+    await ctx.trigger_typing()
+    result = ""
+    spaces = "                "
+    if len(uuid) != 0:
+        for i in range(len(uuid)):
+            if data == "all":
+                result = result + (username[i] + spaces)[0:16] + " - " + uuid[i] + "\n"
+
+            elif "name" in data:
+                result = result + (username[i] + "\n")
+
+            elif "uuid" in data:
+                result = result + (username[i] + "\n")
+
+        if len(result) <= 1994:
+            await ctx.send(f"```{result}```")
+
+        else:
+            with open("list.txt", "w") as g:
+                g.write(result)
+                g.close()
+
+            await ctx.send(file=discord.File("list.txt"))
+
+    else:
+        await ctx.send("No accounts in list. Add some with `!add user`.")
+
+
+@bot.command(name="remove", aliases=["delete", "del"])
+async def remove_user(ctx, arg1=None, called_by_user=True):
+    async with ctx.typing():
+        global uuid, username, pronoun
+        index = None
+
+        if len(arg1) == 32:  # formats UUID
+            arg1 = format_uuid(arg1)
+
+        if len(arg1) == 36:  # reads formatted UUID
+            for i in range(len(uuid)):
+                if uuid[i] == arg1:
+                    index = i
+
+        elif 3 <= len(arg1) <= 16:  # reads username
+            for i in range(len(username)):
+                if username[i] == arg1:
+                    index = i
+
+        if index is None and called_by_user:
+            await ctx.send("The username or UUID is invalid or not in the list.")
+
+        else:
+            del username[index]
+            del uuid[index]
+            del pronoun[index]
+            if called_by_user:
+                await remove_single_from_database(uuid[index])
+                await ctx.send(f"Deleted user")
+
+
+@bot.command(name="remove-all", aliases=["delete-all", "delall"])
+async def remove_all_users(ctx):
+    global uuid, username, pronoun
+    async with ctx.typing():
+        uuid = []
+        username = []
+        pronoun = []
+
+        await remove_multiple_from_database()
+
+        await ctx.send(f"Removed all users.")
+
+
+@tasks.loop(seconds=1.0)
+async def check_skin_updates():
+    global iteration
+    if iteration == 300:
+        iteration = 0
+        for i in range(len(uuid)):
+            cached_skin = await refresh_skin_cache(uuid[i])
+            if len(cache) < len(uuid):
+                cache.append(cached_skin)
+            elif cached_skin != cache[i]:
+                cache[i] = cached_skin
+                render = await render_skin(uuid[i])
+
+                await channel.send(file=discord.File(render, f"{username[i]}.png"),
+                                   content=f"{username[i]} has changed {await get_random_pronoun(pronoun[i])} skin!")
+
+        iteration += 1
+
+
+@bot.event
+async def on_message(ctx):
+    await bot.process_commands(ctx)
+
 
 bot.run(BOT_KEY)
